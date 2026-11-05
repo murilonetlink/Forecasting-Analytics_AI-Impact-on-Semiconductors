@@ -1,0 +1,18 @@
+# Ambientes e caches
+.venv/
+.venv-1/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Arquivos que ficam só no computador local
+arquivos_locais/
+
+# Gerados em tempo de execução (séries enviadas pelo usuário no app)
+data/extras/
+
+# CSVs que o notebook grava ao ser executado
+notebooks/*.csv
+
+# Segredos do Streamlit
+.streamlit/secrets.toml

@@ -1,0 +1,34 @@
+data,evento,categoria,empresa
+2012-09-30,AlexNet vence o ImageNet,Modelo,Universidade de Toronto
+2017-06-12,Artigo "Attention Is All You Need" (Transformer),Modelo,Google
+2018-06-11,GPT-1,Modelo,OpenAI
+2018-10-11,BERT,Modelo,Google
+2019-02-14,GPT-2,Modelo,OpenAI
+2020-05-14,GPU A100 anunciada,Hardware,NVIDIA
+2020-06-11,GPT-3 (API),Modelo,OpenAI
+2021-06-29,GitHub Copilot (prévia técnica),Modelo,GitHub/OpenAI
+2022-03-22,GPU H100 anunciada,Hardware,NVIDIA
+2022-04-06,DALL-E 2,Modelo,OpenAI
+2022-08-22,Stable Diffusion,Modelo,Stability AI
+2022-11-30,ChatGPT,Modelo,OpenAI
+2023-02-24,LLaMA,Modelo,Meta
+2023-03-14,GPT-4,Modelo,OpenAI
+2023-05-24,NVIDIA eleva projeção de receita por demanda de IA,Mercado,NVIDIA
+2023-07-18,Llama 2,Modelo,Meta
+2023-12-06,Gemini 1.0,Modelo,Google
+2024-02-15,Sora (prévia),Modelo,OpenAI
+2024-03-04,Claude 3,Modelo,Anthropic
+2024-03-18,GPU Blackwell anunciada,Hardware,NVIDIA
+2024-04-18,Llama 3,Modelo,Meta
+2024-05-13,GPT-4o,Modelo,OpenAI
+2024-06-20,Claude 3.5 Sonnet,Modelo,Anthropic
+2024-09-12,o1-preview,Modelo,OpenAI
+2024-12-26,DeepSeek-V3,Modelo,DeepSeek
+2025-01-20,DeepSeek-R1,Modelo,DeepSeek
+2025-01-27,Queda das ações de IA após DeepSeek,Mercado,DeepSeek
+2025-02-24,Claude 3.7 Sonnet,Modelo,Anthropic
+2025-02-27,GPT-4.5,Modelo,OpenAI
+2025-03-25,Gemini 2.5 Pro,Modelo,Google
+2025-04-05,Llama 4,Modelo,Meta
+2025-05-22,Claude 4,Modelo,Anthropic
+2025-08-07,GPT-5,Modelo,OpenAI
