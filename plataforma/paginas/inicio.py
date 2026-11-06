@@ -13,9 +13,19 @@ HIPOTESES = [
 FERRAMENTAS = [
     ("comparar", "Comparar séries", "Ações, cobre, ouro, câmbio e juros no mesmo gráfico, com base 100."),
     ("relacoes", "Quem anda junto", "Ranking de correlação, correlação no tempo, Granger e cointegração."),
-    ("risco", "Risco e volatilidade", "Quão agitada está a série e como isso deve evoluir (ARCH/GARCH)."),
-    ("previsao", "Previsão", "ARIMA com intervalo de confiança, testado contra o passeio aleatório."),
-    ("palco", "Palco (apresentação)", "Os resultados em slides com números e roteiro de fala, direto dos dados."),
+    ("risco", "Risco e volatilidade", "Quão agitada está a série e como isso deve evoluir."),
+]
+
+MODELOS = [
+    ("arima", "ARIMA", "O passado da própria série ajuda a prever o futuro? Já vem na melhor ordem (p, d, q)."),
+    ("sarima", "SARIMA", "O ARIMA com sazonalidade: o mesmo dia da semana nas semanas anteriores ajuda?"),
+    ("sarimax", "SARIMAX", "O SARIMA com os lançamentos de IA como variável externa."),
+    ("arch", "ARCH", "Modela a volatilidade a partir dos choques recentes e monta o intervalo da previsão."),
+    ("garch", "GARCH", "O ARCH com memória da própria volatilidade."),
+    ("melhor", "Melhor modelo", "Ranking dos cinco modelos contra o passeio aleatório, com a previsão para 12 meses."),
+]
+
+OUTROS = [
     ("dados", "Dados", "Atualizar o Yahoo Finance, enviar suas séries e editar a tabela de eventos."),
 ]
 
@@ -33,7 +43,12 @@ GLOSSARIO = [
     ("Efeito alavancagem", "Quedas aumentam a volatilidade mais do que altas do mesmo tamanho. GJR e EGARCH medem isso."),
     ("AIC / BIC", "Notas de qualidade do modelo que penalizam complexidade. Quanto menor, melhor."),
     ("ARIMA(p,d,q)", "p = memória dos valores passados, d = diferenciações para estabilizar a série, q = memória dos erros passados."),
-    ("Passeio aleatório", "Previsão ingênua que repete o último valor. É o adversário mínimo de qualquer modelo de preço."),
+    ("SARIMA / SARIMAX", "ARIMA com parte sazonal (olha o mesmo dia da semana nas semanas anteriores) e, no X, com variáveis externas como os lançamentos de IA."),
+    ("Deriva", "Crescimento médio constante por dia. Sem deriva, a previsão central fica parada no último valor."),
+    ("Passeio aleatório", "Previsão ingênua que repete o último valor (ou o último valor mais a deriva). É o adversário mínimo de qualquer modelo de preço."),
+    ("Teste com origem móvel", "A cada mês de um período passado, o modelo, ajustado na base diária, prevê os 252 pregões (12 meses) seguintes só com o que se sabia então; depois se compara com o que aconteceu."),
+    ("RMSE / CRPS", "RMSE mede o erro do valor central. CRPS mede a previsão inteira, valor e intervalo. Quanto menor, melhor."),
+    ("Diebold-Mariano", "Teste de se a diferença de erro entre dois modelos é estatisticamente significativa ou pode ser acaso."),
     ("IC 95%", "Faixa em que o valor real deve cair 95% das vezes, se o modelo estiver certo."),
     ("Drawdown", "Distância entre o valor atual e o pico anterior. Mede o tamanho das quedas."),
 ]
@@ -47,6 +62,14 @@ def _link(ctx, chave, rotulo, icone=":material/arrow_forward:"):
 def _visto(chave):
     sim = chave in st.session_state.get("visitadas", set())
     return f'<span class="visto {"sim" if sim else ""}"><span class="led"></span>{"visitada" if sim else "ainda não visitada"}</span>'
+
+
+def _grade(ctx, itens):
+    for i in range(0, len(itens), 3):
+        for col, (chave, nome, desc) in zip(st.columns(3), itens[i:i + 3]):
+            with col.container(border=True):
+                md(f'<div class="mapa-t">{esc(nome)}</div><div class="mapa-s">{esc(desc)}</div>{_visto(chave)}')
+                _link(ctx, chave, "Abrir")
 
 
 def render(ctx):
@@ -80,11 +103,11 @@ def render(ctx):
     visual.mostrar(fig, "indices_setor")
 
     st.markdown("#### Ferramentas", help="Páginas de apoio, na barra lateral. Podem ser usadas em qualquer ordem.")
-    for linha in (FERRAMENTAS[:3], FERRAMENTAS[3:]):
-        for col, (chave, nome, desc) in zip(st.columns(3), linha):
-            with col.container(border=True):
-                md(f'<div class="mapa-t">{esc(nome)}</div><div class="mapa-s">{esc(desc)}</div>{_visto(chave)}')
-                _link(ctx, chave, "Abrir")
+    _grade(ctx, FERRAMENTAS)
+    st.markdown("#### Modelos de previsão", help="Cinco modelos de série temporal, cada um já na melhor versão, e uma página que escolhe o melhor.")
+    _grade(ctx, MODELOS)
+    st.markdown("#### Dados")
+    _grade(ctx, OUTROS)
 
     with st.expander("Glossário rápido"):
         st.markdown("\n".join(f"- **{t}:** {d}" for t, d in GLOSSARIO))

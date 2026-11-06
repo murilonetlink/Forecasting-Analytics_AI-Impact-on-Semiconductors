@@ -185,14 +185,84 @@ def garch(nome, tabela, arch, atual, pct_atual):
             f"{pct(atual, 0)} ao ano, maior que {pct(pct_atual, 0)} dos períodos da história.", "ok" if ondas else "info")
 
 
-# ----------------------------------------------------------------------- previsão
-def arima(ordem, razao, horizonte, previsto, inferior, superior):
-    ordem = "(" + ",".join(str(o) for o in ordem) + ")"
-    prev = f" Previsão para {horizonte} períodos: {num(previsto, 0)} (IC 95%: {num(inferior, 0)} a {num(superior, 0)})."
-    if razao < 1:
-        return ("Leitura da previsão",
-                f"No trecho de teste, o ARIMA{ordem} errou {pct((1 - razao) * 100, 0)} menos que o passeio aleatório (repetir o último valor)."
-                f"{prev} Vale como cenário, com a ressalva de ser um único trecho de teste.", "ok")
-    return ("Leitura da previsão",
-            f"No trecho de teste, o ARIMA{ordem} errou {pct((razao - 1) * 100, 0)} <b>mais</b> que o passeio aleatório: aqui o modelo não "
-            f"compensa.{prev} Trate como cenário, não como aposta.", "alerta")
+# --------------------------------------------------------------- modelos de previsão
+def modelo(desc, geral, vs_base, base_nome, dm_p, final, atual, n_origens, ini, fim, equivale_rw=False):
+    """`geral`: métricas do teste; `final`: (previsto, inferior, superior) em nível daqui a 12 meses."""
+    erro = (np.exp(geral["rmse"]) - 1) * 100
+    txt = (f"No teste ({n_origens} previsões, uma por mês, de {mes_ano(ini)} a {mes_ano(fim)}), o <b>{esc(desc)}</b> errou em média "
+           f"cerca de {pct(erro, 0)} ao prever de 1 a 12 meses à frente.")
+    if equivale_rw:
+        txt += " Com p = q = 0 e deriva, ele é o próprio passeio aleatório com deriva: o passado dos retornos diários não ajuda a prever o próximo."
+    elif abs(vs_base) < .005:
+        txt += f" Isso é praticamente igual ao {base_nome}."
+    else:
+        sig = "" if np.isnan(dm_p) else f" (diferença {'estatisticamente significativa' if dm_p < .05 else 'não significativa'}, {pval(dm_p)})"
+        txt += f" Isso é {pct(abs(vs_base) * 100, 0)} {'menos' if vs_base < 0 else 'mais'} erro que o {base_nome}{sig}."
+    prev, lo, hi = final
+    txt += (f" Para daqui a 12 meses ele prevê {num(prev, 0)} (IC 95%: {num(lo, 0)} a {num(hi, 0)}), "
+            f"{pct((prev / atual - 1) * 100, 0, True)} em relação ao último valor ({num(atual, 0)}).")
+    tom = "ok" if vs_base < -.005 and dm_p < .05 else "alerta" if vs_base > .005 and dm_p < .05 else "info"
+    return ("Leitura do modelo", txt, tom)
+
+
+def conclusao(serie, desc, criterio, linha, base_nome, dm_p, melhor_crps=None):
+    """`linha`: métricas do melhor modelo (rmse, vs_base); `melhor_crps`: nome do melhor pelo CRPS, se diferente."""
+    erro = (np.exp(linha["rmse"]) - 1) * 100
+    if abs(linha["vs_base"]) < .005:
+        txt = (f"Pelo critério <b>{criterio}</b>, o melhor modelo para o <b>{esc(serie)}</b> é o <b>{esc(desc)}</b>, com erro típico de cerca de "
+               f"{pct(erro, 0)}. Mas isso é praticamente igual ao {base_nome}"
+               f"{'' if np.isnan(dm_p) else f' ({pval(dm_p)})'}: na prática os modelos empatam, e escolher o mais simples ou o de melhor "
+               f"intervalo é razoável.")
+        tom = "info"
+    elif linha["vs_base"] >= 0:
+        txt = (f"Nenhum dos cinco modelos errou menos que o {base_nome} para o <b>{esc(serie)}</b>. O melhor deles, pelo critério "
+               f"<b>{criterio}</b>, foi o <b>{esc(desc)}</b> (erro típico de cerca de {pct(erro, 0)}).")
+        tom = "alerta"
+    else:
+        txt = (f"Pelo critério <b>{criterio}</b>, o melhor modelo para o <b>{esc(serie)}</b> é o <b>{esc(desc)}</b>: erro típico de cerca de "
+               f"{pct(erro, 0)}, {pct(abs(linha['vs_base']) * 100, 0)} abaixo do {base_nome}.")
+        if not np.isnan(dm_p) and dm_p < .05:
+            txt += f" A vantagem é estatisticamente significativa ({pval(dm_p)})."
+            tom = "ok"
+        else:
+            txt += (f" Mas a diferença para o {base_nome} não é estatisticamente significativa"
+                    f"{'' if np.isnan(dm_p) else f' ({pval(dm_p)})'}: na prática os modelos empatam, e escolher o mais simples ou o de melhor "
+                    f"intervalo é razoável.")
+            tom = "info"
+    if melhor_crps:
+        txt += f" Pela nota CRPS, que avalia também o intervalo de confiança, o melhor é o {esc(melhor_crps)}."
+    return ("Melhor modelo", txt, tom)
+
+
+def lancamentos(params):
+    """`params`: DataFrame (coef, p-valor) indexado pelo nome do parâmetro; usa as linhas 'lanc_t-k'."""
+    linhas = [(k, r) for k, r in params.iterrows() if str(k).startswith("lanc_t-")]
+    if not linhas:
+        return None
+    sig = [(k, r) for k, r in linhas if r["p-valor"] < .05]
+    if sig:
+        itens = "; ".join(f"{'no dia' if k.endswith('-0') else 'há ' + k.split('-')[-1] + ' dia(s)'}: {pct(r['coef'] * 100, 1, True)} no retorno por lançamento "
+                          f"({pval(r['p-valor'])})" for k, r in sig)
+        return ("Leitura dos lançamentos de IA", f"Há efeito estatisticamente significativo sobre o retorno diário: {itens}.", "ok")
+    menor = min(r["p-valor"] for _, r in linhas)
+    return ("Leitura dos lançamentos de IA",
+            f"Nenhum coeficiente de lançamentos de IA é estatisticamente significativo (menor {pval(menor)}). Neste modelo, os lançamentos "
+            f"não explicam o retorno diário, o que também não confirma a H3.", "info")
+
+
+def diagnostico_arima(desc, d):
+    ok = d["lb_p"] >= .05
+    return ("Leitura do diagnóstico",
+            f"Os resíduos do <b>{esc(desc)}</b> " + (f"não mostram autocorrelação restante (Ljung-Box, {pval(d['lb_p'])}): o modelo captou o padrão que existia."
+                                                    if ok else f"ainda têm autocorrelação (Ljung-Box, {pval(d['lb_p'])}): sobrou padrão que o modelo não captou."),
+            "ok" if ok else "alerta")
+
+
+def diagnostico_vol(desc, d):
+    ok = d["archlm_p"] >= .05 and d["lb2_p"] >= .05
+    return ("Leitura do diagnóstico",
+            f"Depois do <b>{esc(desc)}</b>, os resíduos padronizados " +
+            (f"não mostram mais agrupamento de volatilidade (ARCH-LM, {pval(d['archlm_p'])}; Ljung-Box dos quadrados, {pval(d['lb2_p'])}): "
+             f"o modelo captou as ondas de volatilidade." if ok else
+             f"ainda mostram agrupamento de volatilidade (ARCH-LM, {pval(d['archlm_p'])}; Ljung-Box dos quadrados, {pval(d['lb2_p'])}): "
+             f"o modelo não captou tudo. Tente mais defasagens ou o GARCH."), "ok" if ok else "alerta")

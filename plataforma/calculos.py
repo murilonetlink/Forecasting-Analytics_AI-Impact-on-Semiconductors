@@ -1,9 +1,11 @@
 """Cálculos pesados com cache, compartilhados entre as páginas e o modo apresentação."""
+import json
+
 import pandas as pd
 import streamlit as st
 
 from plataforma import analises as an
-from plataforma import dados
+from plataforma import dados, modelos
 
 
 @st.cache_data(show_spinner=False)
@@ -21,13 +23,54 @@ def garch(s, nomes, dist, horizonte, freq):
     return tabela, vols, prev, params, an.efeito_arch(r)
 
 
-@st.cache_data(show_spinner=False)
-def selecao_arima(y, d):
-    return an.selecionar_ordem(y, d)
+# ----------------------------------------------------------------- modelos de previsão
+def versao_modelos():
+    """Muda quando os dados, os eventos ou os resultados guardados mudam."""
+    arqs = [dados.ARQ_PRECOS, dados.ARQ_EVENTOS, modelos.ARQ_RESULTADOS]
+    return tuple(a.stat().st_mtime_ns if a.exists() else 0 for a in arqs)
+
+
+def cfg_json(cfg):
+    return json.dumps(cfg, sort_keys=True)
 
 
 @st.cache_data(show_spinner=False)
-def arima(y, ordem, n_teste, horizonte, freq):
-    metricas, teste = an.avaliar_arima(y, ordem, n_teste)
-    prev, res = an.prever_arima(y, ordem, horizonte, freq)
-    return metricas, teste, prev, res.aic, res.bic
+def serie_modelo(nome, versao):
+    painel, _ = dados.carregar()
+    return modelos.preparar(painel, nome)
+
+
+@st.cache_data(show_spinner="Calculando o modelo; sem os resultados guardados isso pode levar alguns minutos...")
+def entrada_modelo(nome, familia, versao):
+    """Melhor configuração, teste e previsão de uma família: do arquivo guardado, ou calculados na hora."""
+    serie = serie_modelo(nome, versao)
+    guardada = modelos.entrada_guardada(serie, familia)
+    if guardada is not None:
+        return guardada
+    base = entrada_modelo(nome, "sarima", versao)["selecao"]["config"] if familia == "sarimax" else None
+    return modelos.calcular_entrada(serie, familia, base=base)
+
+
+@st.cache_data(show_spinner=False)
+def previsao_manual(nome, familia, cfg, versao, taxa=None):
+    serie = serie_modelo(nome, versao)
+    mu, sd, _ = modelos.prever(serie, familia, json.loads(cfg), serie.n - 1, taxa)
+    return {"mu": mu.tolist(), "sd": sd.tolist()}
+
+
+@st.cache_data(show_spinner="Testando a configuração nos últimos 5 anos...")
+def backtest_manual(nome, familia, cfg, versao, taxa=None):
+    serie = serie_modelo(nome, versao)
+    mu, sd, falhas = modelos.backtest(serie, familia, json.loads(cfg), taxa=taxa)
+    return {"mu": mu.tolist(), "sd": sd.tolist(), "falhas": falhas}
+
+
+@st.cache_data(show_spinner=False)
+def diagnostico_modelo(nome, familia, cfg, versao, taxa=None):
+    return modelos.diagnostico(serie_modelo(nome, versao), familia, json.loads(cfg), taxa)
+
+
+@st.cache_data(show_spinner=False)
+def comparacao(nome, versao):
+    serie = serie_modelo(nome, versao)
+    return modelos.comparar(serie, {f: entrada_modelo(nome, f, versao) for f in modelos.FAMILIAS})

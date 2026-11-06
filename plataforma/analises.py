@@ -5,14 +5,11 @@ import numpy as np
 import pandas as pd
 from arch import arch_model
 from scipy import stats
-from sklearn.metrics import mean_squared_error
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
-from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.stattools import adfuller, coint, grangercausalitytests
 
 PERIODOS_ANO = {"D": 252, "W": 52, "M": 12}
-FREQ_FUTURA = {"D": "B", "W": "W-FRI", "M": "ME"}
 
 
 def variacao(s):
@@ -149,53 +146,6 @@ def prever_vol(res, nome, horizonte, freq):
 
 def vol_condicional_anual(res, freq):
     return res.conditional_volatility * np.sqrt(PERIODOS_ANO[freq])
-
-
-# ------------------------------------------------------------------------ ARIMA
-def selecionar_ordem(y, d=1, pmax=3, qmax=3):
-    """Tabela AIC/BIC de ARIMA(p,d,q). y é a série já em log."""
-    v = y.values
-    linhas = []
-    for p in range(pmax + 1):
-        for q in range(qmax + 1):
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    m = ARIMA(v, order=(p, d, q)).fit()
-                linhas.append({"ordem": (p, d, q), "AIC": m.aic, "BIC": m.bic})
-            except Exception:
-                continue
-    return pd.DataFrame(linhas).sort_values("AIC").reset_index(drop=True)
-
-
-def _datas_futuras(indice, h, freq):
-    return pd.date_range(indice[-1], periods=h + 1, freq=FREQ_FUTURA[freq])[1:]
-
-
-def avaliar_arima(y, ordem, n_teste):
-    """Treina até n_teste períodos antes do fim e prevê o trecho final; compara com passeio aleatório."""
-    treino, teste = y.iloc[:-n_teste], y.iloc[-n_teste:]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        prev = ARIMA(treino.values, order=ordem).fit().forecast(n_teste)
-    real = teste.values
-    naive = np.full(n_teste, treino.iloc[-1])
-    rmse = lambda a, b: float(np.sqrt(mean_squared_error(a, b)))
-    return pd.DataFrame({
-        "ARIMA": {"RMSE (log)": rmse(real, prev), "MAE (log)": float(np.mean(np.abs(real - prev)))},
-        "Passeio aleatório": {"RMSE (log)": rmse(real, naive), "MAE (log)": float(np.mean(np.abs(real - naive)))},
-    }), pd.DataFrame({"real": real, "ARIMA": prev, "passeio aleatório": naive}, index=teste.index)
-
-
-def prever_arima(y, ordem, h, freq, alfa=0.05):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        res = ARIMA(y.values, order=ordem).fit()
-    f = res.get_forecast(h)
-    ic = np.asarray(f.conf_int(alpha=alfa))
-    idx = _datas_futuras(y.index, h, freq)
-    return pd.DataFrame({"previsto": np.asarray(f.predicted_mean), "inferior": ic[:, 0], "superior": ic[:, 1]},
-                        index=idx), res
 
 
 # ------------------------------------------------------------- ciclos e patamar

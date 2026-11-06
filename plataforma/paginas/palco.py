@@ -6,9 +6,10 @@ import pandas as pd
 import streamlit as st
 
 from plataforma import analises as an
-from plataforma import calculos, dados, graficos, visual
+from plataforma import calculos, dados, graficos, modelos, visual
 from plataforma import leitura as L
-from plataforma.visual import COR, chip, esc, md, numero
+from plataforma.modelos import NOMES
+from plataforma.visual import COR, COR_MODELO, chip, esc, md, numero
 
 MEM, GPU, SP = "Índice Memória", "Índice GPU", "S&P 500 (^GSPC)"
 MARCO = date(2022, 11, 30)
@@ -241,25 +242,65 @@ def s_risco(ctx):
               "Pergunta provável: isso serve para prever preço? Resposta: não diz a direção, só o tamanho esperado dos movimentos; é uma medida de risco."])
 
 
+def _dados_modelos(nome):
+    versao = calculos.versao_modelos()
+    serie = calculos.serie_modelo(nome, versao)
+    tab, _, melhor_base, _, _ = calculos.comparacao(nome, versao)
+    entradas = {f: calculos.entrada_modelo(nome, f, versao) for f in modelos.FAMILIAS}
+    melhor = tab.loc[list(modelos.FAMILIAS), "rmse"].idxmin()
+    return serie, tab, melhor_base, entradas, melhor
+
+
+def s_modelos(ctx):
+    _cabeca("Modelos de previsão", "Qual modelo prevê melhor?")
+    nome = _escolher_indice("pal_mod_nome")
+    serie, tab, melhor_base, entradas, melhor = _dados_modelos(nome)
+    linha = tab.loc[melhor]
+    melhor_crps = tab.loc[list(modelos.FAMILIAS), "crps"].idxmin()
+    desc = modelos.descrever(melhor, entradas[melhor]["config"])
+    outro = None if melhor_crps == melhor else modelos.descrever(melhor_crps, entradas[melhor_crps]["config"])
+    _frase(L.conclusao(nome, desc, "erro médio nos 12 meses (RMSE)", linha, NOMES[melhor_base].lower(), linha["dm_p"], outro)[1])
+    _cartoes([(NOMES[melhor], "melhor modelo pelo menor erro", "gold"),
+              (f"±{L.pct((np.exp(linha['rmse']) - 1) * 100, 0)}", "erro típico de 1 a 12 meses à frente", "mem"),
+              ("igual" if abs(linha["vs_base"]) < .0005 else L.pct(linha["vs_base"] * 100, 1, True), f"erro em relação ao {NOMES[melhor_base].lower()}",
+               "mem" if abs(linha["vs_base"]) < .0005 else "ok" if linha["vs_base"] < 0 else "gpu"),
+              ("n/d" if np.isnan(linha["dm_p"]) else L.pnum(linha["dm_p"]), "p-valor (abaixo de 0,05 = diferença real)", "ok" if linha["dm_p"] < .05 else "mem")])
+    visual.mostrar(graficos.barras_modelos(
+        (np.exp(tab["rmse"]) - 1) * 100, "Erro típico de cada modelo no teste dos últimos 5 anos",
+        "Menor é melhor. Contorno dourado: o melhor. Cinza e branco: passeios aleatórios de referência.", melhor=melhor, formato="±{:.0f}%",
+        x_titulo="Erro típico (%)", fonte=FONTE, altura=340,
+        ajuda="A cada mês dos últimos 5 anos, cada modelo previu os 12 meses seguintes só com o que se sabia então. A barra é o erro médio."),
+        "modelos", chave="palco_modelos")
+    _roteiro(["Comparamos cinco modelos: ARIMA, SARIMA, SARIMAX (com os lançamentos de IA), ARCH e GARCH. Cada um já foi ajustado na sua melhor versão.",
+              "O teste é honesto: a cada mês dos últimos 5 anos o modelo prevê os 12 meses seguintes usando só o passado daquele mês. A barra é o erro médio.",
+              "Os dois passeios aleatórios (cinza e branco) são o adversário mínimo: repetir o último valor, com ou sem crescimento médio.",
+              "Olhe o p-valor: se estiver acima de 0,05, a vantagem do melhor modelo pode ser acaso. Nesse caso diga que os modelos empatam e que a escolha deve se apoiar em simplicidade e na qualidade do intervalo.",
+              "Pergunta provável: por que ARCH e GARCH entram se eles modelam volatilidade? Resposta: o valor central vem do retorno médio e o intervalo, da volatilidade prevista; o ganho deles está sobretudo no intervalo."])
+
+
 def s_previsao(ctx):
     _cabeca("Previsão", "E nos próximos doze meses?")
     nome = _escolher_indice("pal_prev_nome")
-    y = an.nivel_log(ctx.serie(nome, "M", completa=True))
-    ordem = (1, 1, 1)
-    metricas, teste, prev, aic, _ = calculos.arima(y, ordem, 12, 12, "M")
-    razao = metricas.loc["RMSE (log)", "ARIMA"] / metricas.loc["RMSE (log)", "Passeio aleatório"]
-    fim = np.exp(prev.iloc[-1])
-    _frase(L.arima(ordem, razao, 12, float(fim["previsto"]), float(fim["inferior"]), float(fim["superior"]))[1])
-    _cartoes([(L.num(fim["previsto"], 0), "valor central previsto em 12 meses", "gold"),
-              (f"{L.num(fim['inferior'], 0)} a {L.num(fim['superior'], 0)}", "intervalo de confiança de 95%", "mem"),
-              (f"{L.num(razao, 2)}×", "erro do ARIMA ÷ erro do passeio aleatório", "ok" if razao < 1 else "gpu")])
-    visual.mostrar(graficos.previsao(
-        y.iloc[-60:], prev, np.exp, nome, f"Previsão de {nome}", "A faixa dourada é o intervalo de confiança de 95%.", fonte=FONTE, altura=400,
-        ajuda="Linha dourada: previsão central. Faixa: onde o valor deve cair 95% das vezes se o modelo estiver certo."), "previsao", chave="palco_prev")
-    _roteiro(["O ARIMA projeta o futuro a partir do próprio passado da série. A faixa dourada mostra a incerteza: ela se abre rápido, e isso é esperado.",
-              "O teste honesto: escondemos os últimos 12 meses, ajustamos o modelo sem eles e comparamos com o que aconteceu. O número é o erro do ARIMA dividido pelo erro de simplesmente repetir o último valor.",
-              "Abaixo de 1: o modelo ganhou do adversário mínimo. Acima de 1: não compensa. Em preço de ação, ganhar é difícil, então declare o resultado como for.",
-              "Pergunta provável: dá para confiar na previsão? Resposta: como cenário sim, como aposta não; o intervalo de confiança é largo."])
+    serie, tab, melhor_base, entradas, melhor = _dados_modelos(nome)
+    fin = entradas[melhor]["final"]
+    mu, sd = np.asarray(fin["mu"]), np.asarray(fin["sd"])
+    atual = float(np.exp(serie.y.iloc[-1]))
+    central, lo, hi = float(np.exp(mu[-1])), float(np.exp(mu[-1] - 1.96 * sd[-1])), float(np.exp(mu[-1] + 1.96 * sd[-1]))
+    var = (central / atual - 1) * 100
+    _frase(f"Pelo melhor modelo ({NOMES[melhor]}), o <b>{esc(nome)}</b> vai de {L.num(atual, 0)} para cerca de <b>{L.num(central, 0)}</b> em 12 meses "
+           f"({L.pct(var, 0, True)}), com intervalo de 95% entre {L.num(lo, 0)} e {L.num(hi, 0)}.")
+    _cartoes([(L.num(central, 0), "valor central previsto em 12 meses", "gold"),
+              (f"{L.num(lo, 0)} a {L.num(hi, 0)}", "intervalo de confiança de 95%", "mem"),
+              (L.pct(var, 0, True), "variação sobre o último valor", "ok" if var >= 0 else "gpu")])
+    outros = [(NOMES[f], entradas[f]["final"]["mu"], COR_MODELO[f]) for f in modelos.FAMILIAS if f != melhor]
+    visual.mostrar(graficos.leque(
+        serie.y.iloc[-modelos.HIST_DIAS:], modelos.datas_futuras(serie), mu, sd, f"Previsão de {nome}", f"Faixas e linha dourada: {NOMES[melhor]}. Pontilhadas: os outros modelos.",
+        outros=outros, fonte=FONTE, altura=380,
+        ajuda="Linha dourada: previsão central do melhor modelo. Faixas: onde o valor deve cair 80% e 95% das vezes se o modelo estiver certo."),
+        "previsao", chave="palco_prev")
+    _roteiro(["Esta é a previsão do melhor modelo do slide anterior. As faixas mostram a incerteza e se abrem rápido, o que é esperado.",
+              "As linhas pontilhadas são os outros modelos: se ficam perto, a escolha do modelo importa pouco; se se afastam, há incerteza sobre o próprio modelo.",
+              "Pergunta provável: dá para confiar na previsão? Resposta: como cenário sim, como aposta não. O intervalo é largo e o teste mostrou que os modelos mal superam o passeio aleatório."])
 
 
 def _veredito(rotulo, cor):
@@ -313,12 +354,12 @@ def s_placar(ctx):
                    "Revise cada afirmação antes de levá-la ao relatório.", "info")
     _roteiro(["Feche respondendo as três hipóteses, uma de cada vez, e sempre dizendo qual teste está por trás.",
               "Os rótulos são automáticos e seguem regras simples (descritas em cada página). Se o dado mudar, o rótulo muda.",
-              "Próximos passos naturais: ajustar um SARIMAX com os lançamentos de IA como variável externa e ampliar a base de eventos com datas conferidas."])
+              "Próximos passos naturais: ampliar a base de eventos com datas conferidas e testar outros modelos e janelas de previsão."])
 
 
 SLIDES = [("Abertura", s_capa), ("O filme", s_filme), ("H1 · Quedas", s_ciclos), ("H1 · Calendário", s_calendario),
           ("H2 · Novo patamar", s_patamar), ("H3 · Lançamentos de IA", s_eventos), ("Memória × GPU", s_par),
-          ("Insumos", s_insumos), ("Risco", s_risco), ("Previsão", s_previsao), ("Conclusões", s_placar)]
+          ("Insumos", s_insumos), ("Risco", s_risco), ("Modelos", s_modelos), ("Previsão", s_previsao), ("Conclusões", s_placar)]
 
 
 # --------------------------------------------------------------------------- página

@@ -23,6 +23,8 @@ FAMILIAS = {
     "Dados próprios": ["#B5D957", "#9CC23F", "#D4EA8C"],
 }
 CORES_INDICES = {"Índice Memória": COR["mem"], "Índice GPU": COR["gpu"], "Índice GPU (NVDA + AMD)": "#F5AE95"}
+COR_MODELO = {"arima": COR["mem"], "sarima": "#A58BE0", "sarimax": COR["gold"], "arch": COR["ok"], "garch": COR["gpu"],
+              "rw": "#93A79A", "rw_deriva": "#E4EDE6"}
 
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap');
@@ -37,6 +39,7 @@ radial-gradient(circle at 84% 78%,rgba(226,102,75,.07),transparent 46%),var(--pc
 [data-testid="stAppDeployButton"]{display:none}
 .titulo-slide,.frase,.cab-t,.cab-p,.big,.rot,.mapa-t,.mapa-s,.lb,.dica,.hip,.numcard,.leitura{font-family:'Archivo',system-ui,-apple-system,'Segoe UI',sans-serif}
 [data-testid="stSidebar"]{background:var(--mask2);border-right:1px solid var(--line)}
+.menu-secao{font-family:var(--fm);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--silk-dim);margin:.9rem 0 .15rem .25rem}
 [data-testid="stMetric"]{background:var(--mask2);border:1px solid var(--line);border-left:3px solid var(--gold);
 border-radius:4px;padding:12px 16px}
 [data-testid="stMetricLabel"] p{color:var(--silk-dim);font-size:13px}
@@ -122,8 +125,8 @@ def leitura(titulo, texto, tom="info"):
        f'<div class="lb">{texto}</div></div>')
 
 
-def dica(texto):
-    md(f'<div class="dica"><b>Como ler:</b> {texto}</div>')
+def dica(texto, rotulo="Como ler"):
+    md(f'<div class="dica"><b>{rotulo}:</b> {texto}</div>')
 
 
 def numero(valor, rotulo, cor="gold"):

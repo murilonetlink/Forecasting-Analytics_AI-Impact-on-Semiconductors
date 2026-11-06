@@ -6,7 +6,8 @@ from plotly.subplots import make_subplots
 
 from plataforma import analises as an
 from plataforma.leitura import pct
-from plataforma.visual import COR, estilizar
+from plataforma.modelos import DIAS_MES, HORIZONTE, NOMES
+from plataforma.visual import COR, COR_MODELO, estilizar
 
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 COR_EVENTO = {"Modelo": "#D9A441", "Hardware": "#E2664B", "Mercado": "#A58BE0"}
@@ -296,32 +297,106 @@ def previsao_volatilidade(prev, titulo, subtitulo=None, **est):
     return estilizar(fig, titulo, subtitulo, x_titulo="Períodos à frente", y_titulo="% ao ano", datas=False, **est)
 
 
-# --------------------------------------------------------------------- previsão
-def previsao(hist, prev, transf, nome, titulo, subtitulo=None, **est):
+# ------------------------------------------------------------ modelos de previsão
+def leque(hist, datas, mu, sd, titulo, subtitulo=None, outros=None, **est):
+    """Previsão em nível (exp do log) com faixas de 80% e 95%. `hist`, `mu` e `sd` estão em log.
+    `outros`: lista de (nome, mu, cor) com a previsão central de outros modelos."""
+    mu, sd = np.asarray(mu), np.asarray(sd)
+    ultimo = float(hist.iloc[-1])
+    x = [hist.index[-1], *datas]
     fig = go.Figure()
-    fig.add_scatter(x=hist.index, y=transf(hist).values, name="Histórico", mode="lines", line=dict(color=COR["silk"], width=2),
+    fig.add_scatter(x=hist.index, y=np.exp(hist.values), name="Histórico", mode="lines", line=dict(color=COR["silk"], width=2.2),
                     hovertemplate="<b>Histórico</b>: %{y:,.0f}<extra></extra>")
-    fig.add_scatter(x=prev.index, y=transf(prev["superior"]).values, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip")
-    fig.add_scatter(x=prev.index, y=transf(prev["inferior"]).values, mode="lines", line=dict(width=0), fill="tonexty",
-                    fillcolor=rgba(COR["gold"], .22), name="IC 95%", hoverinfo="skip")
-    fig.add_scatter(x=prev.index, y=transf(prev["previsto"]).values, name="Previsão", mode="lines+markers",
-                    line=dict(color=COR["gold"], width=3), marker=dict(size=5),
-                    customdata=np.c_[transf(prev["inferior"]).values, transf(prev["superior"]).values],
-                    hovertemplate="<b>Previsão</b>: %{y:,.0f}<br>IC 95%: de %{customdata[0]:,.0f} a %{customdata[1]:,.0f}<extra></extra>")
+    for z, alfa, nome in ((1.96, .16, "IC 95%"), (1.2816, .30, "IC 80%")):
+        fig.add_scatter(x=x, y=np.exp(np.r_[ultimo, mu + z * sd]), mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip")
+        fig.add_scatter(x=x, y=np.exp(np.r_[ultimo, mu - z * sd]), mode="lines", line=dict(width=0), fill="tonexty",
+                        fillcolor=rgba(COR["gold"], alfa), name=nome, hoverinfo="skip")
+    for nome, m, cor in outros or []:
+        fig.add_scatter(x=x, y=np.exp(np.r_[ultimo, np.asarray(m)]), name=nome, mode="lines", line=dict(color=cor, width=1.8, dash="dot"),
+                        hovertemplate=f"<b>{nome}</b>: %{{y:,.0f}}<extra></extra>")
+    centro = np.exp(np.r_[ultimo, mu])
+    custom = np.c_[np.exp(np.r_[ultimo, mu - 1.96 * sd]), np.exp(np.r_[ultimo, mu + 1.96 * sd]), (centro / np.exp(ultimo) - 1) * 100]
+    fig.add_scatter(x=x, y=centro, name="Previsão", mode="lines", line=dict(color=COR["gold"], width=3),
+                    customdata=custom,
+                    hovertemplate="<b>Previsão</b>: %{y:,.0f} (%{customdata[2]:+.0f}% em relação a hoje)<br>"
+                                  "IC 95%: de %{customdata[0]:,.0f} a %{customdata[1]:,.0f}<extra></extra>")
     est.setdefault("altura", 440)
-    return estilizar(fig, titulo, subtitulo, y_titulo=nome, **est)
+    estilizar(fig, titulo, subtitulo, **est)
+    niveis = np.concatenate([np.exp(hist.values), np.exp(mu - 1.96 * sd), np.exp(mu + 1.96 * sd)])
+    eixo_log(fig, niveis.min(), niveis.max())
+    return fig
 
 
-def teste_previsao(hist, teste, transf, titulo, subtitulo=None, **est):
+def previsto_vs_realizado(y, pos, mu, sd, titulo, subtitulo=None, h=HORIZONTE, **est):
+    """Para cada origem, a previsão feita h pregões antes colocada na data-alvo, contra o valor realizado."""
+    meses = round(h / DIAS_MES)
+    mu, sd = np.asarray(mu)[:, h - 1], np.asarray(sd)[:, h - 1]
+    alvo = y.index[[p + h for p in pos]]
+    real = np.exp(y.values[[p + h for p in pos]])
+    origem = [f"{y.index[p]:%d/%m/%Y}" for p in pos]
     fig = go.Figure()
-    fig.add_scatter(x=hist.index, y=transf(hist).values, name="Observado", mode="lines", line=dict(color=COR["silk"], width=2.2),
-                    hovertemplate="<b>Observado</b>: %{y:,.0f}<extra></extra>")
-    fig.add_scatter(x=teste.index, y=transf(teste["ARIMA"]).values, name="ARIMA", mode="lines",
-                    line=dict(color=COR["gold"], width=2.6, dash="dash"), hovertemplate="<b>ARIMA</b>: %{y:,.0f}<extra></extra>")
-    fig.add_scatter(x=teste.index, y=transf(teste["passeio aleatório"]).values, name="Passeio aleatório", mode="lines",
-                    line=dict(color=COR["mem"], width=2.2, dash="dot"), hovertemplate="<b>Passeio aleatório</b>: %{y:,.0f}<extra></extra>")
+    fig.add_scatter(x=alvo, y=np.exp(mu + 1.96 * sd), mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip")
+    fig.add_scatter(x=alvo, y=np.exp(mu - 1.96 * sd), mode="lines", line=dict(width=0), fill="tonexty",
+                    fillcolor=rgba(COR["gold"], .18), name="IC 95%", hoverinfo="skip")
+    fig.add_scatter(x=y.index[pos[0]:], y=np.exp(y.values[pos[0]:]), name="Realizado", mode="lines",
+                    line=dict(color=COR["silk"], width=2.2), hovertemplate="<b>Realizado</b>: %{y:,.0f}<extra></extra>")
+    fig.add_scatter(x=alvo, y=np.exp(mu), name=f"Previsto {meses} meses antes", mode="lines", line=dict(color=COR["gold"], width=2.6),
+                    customdata=np.c_[origem, real, (np.exp(mu) / real - 1) * 100],
+                    hovertemplate=f"<b>Previsto há {meses} meses</b> (em %{{customdata[0]}}): %{{y:,.0f}}<br>"
+                                  "Realizado: %{customdata[1]:,.0f} (erro de %{customdata[2]:+.0f}%)<extra></extra>")
+    est.setdefault("altura", 400)
+    estilizar(fig, titulo, subtitulo, **est)
+    eixo_log(fig, min(real.min(), np.exp(mu - 1.96 * sd).min()), max(real.max(), np.exp(mu + 1.96 * sd).max()))
+    return fig
+
+
+def origem_explorer(y, p, mu, sd, titulo, subtitulo=None, **est):
+    """Previsão feita na origem `p` (posição) com o que aconteceu depois, para ver um caso concreto."""
+    hist = y.iloc[max(0, p - HORIZONTE): p + 1]
+    datas = y.index[p + 1: p + 1 + len(mu)]
+    fig = leque(hist, datas, mu, sd, titulo, subtitulo, **est)
+    real = y.iloc[p: p + 1 + len(mu)]
+    fig.add_scatter(x=real.index, y=np.exp(real.values), name="Realizado", mode="lines", line=dict(color=COR["silk"], width=2.2, dash="dash"),
+                    hovertemplate="<b>Realizado</b>: %{y:,.0f}<extra></extra>")
+    return fig
+
+
+def erro_por_horizonte(por_h, destaque, titulo, subtitulo=None, **est):
+    """Erro típico (%) por horizonte de cada modelo. `por_h`: {família: DataFrame com coluna rmse}."""
+    fig = go.Figure()
+    for fam, tab in por_h.items():
+        base = fam in ("rw", "rw_deriva")
+        grosso = fam == destaque
+        fig.add_scatter(x=list(tab.index / DIAS_MES), y=(np.exp(tab["rmse"].values) - 1) * 100, name=NOMES[fam], mode="lines",
+                        line=dict(color=COR_MODELO[fam], width=3.4 if grosso else 1.6, dash="dot" if base else "solid"), customdata=tab["rmse"].values,
+                        hovertemplate=f"<b>{NOMES[fam]}</b>: erro típico de ±%{{y:.0f}}% (RMSE %{{customdata:.3f}} em log)<extra></extra>")
     est.setdefault("altura", 380)
-    return estilizar(fig, titulo, subtitulo, **est)
+    fig = estilizar(fig, titulo, subtitulo, x_titulo="Meses à frente", y_titulo="Erro típico (%)", datas=False, **est)
+    fig.update_layout(legend=dict(y=-0.3))
+    return fig.update_xaxes(dtick=1, hoverformat=".1f")
+
+
+def barras_modelos(valores, titulo, subtitulo=None, melhor=None, formato="{:.3f}", x_titulo=None, **est):
+    """Barras horizontais, com o menor valor (melhor) no topo. `valores`: Series indexada pela família."""
+    d = valores.sort_values(ascending=False)
+    fig = go.Figure(go.Bar(
+        x=d.values, y=[NOMES[f] for f in d.index], orientation="h", text=[formato.format(v) for v in d.values], textposition="outside",
+        cliponaxis=False, marker=dict(color=[COR_MODELO[f] for f in d.index],
+                                      line=dict(color=[COR["gold"] if f == melhor else "rgba(0,0,0,0)" for f in d.index], width=3)),
+        hovertemplate="<b>%{y}</b>: %{text}<extra></extra>"))
+    est.setdefault("altura", max(300, 46 * len(d) + 110))
+    return estilizar(fig, titulo, subtitulo, x_titulo=x_titulo, hover="closest", datas=False, legenda=False, **est)
+
+
+def acf_residuos(valores, n, titulo, subtitulo=None, **est):
+    """Autocorrelação dos resíduos (sem a defasagem 0). Barras fora da faixa indicam padrão que o modelo não captou."""
+    v = np.asarray(valores)[1:]
+    lim = 1.96 / np.sqrt(n)
+    fig = go.Figure(go.Bar(x=list(range(1, len(v) + 1)), y=v, marker_color=[COR["gpu"] if abs(a) > lim else COR["mem"] for a in v],
+                           hovertemplate="defasagem %{x}: autocorrelação %{y:+.2f}<extra></extra>"))
+    fig.add_hrect(y0=-lim, y1=lim, fillcolor=rgba(COR["dim"], .14), line_width=0)
+    est.setdefault("altura", 300)
+    return estilizar(fig, titulo, subtitulo, x_titulo="Defasagem (dias)", hover="closest", datas=False, legenda=False, **est)
 
 
 # ------------------------------------------------------------------------ filme
